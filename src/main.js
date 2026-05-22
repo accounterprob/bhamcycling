@@ -32,11 +32,12 @@ import {
 } from './instructions.js'
 import {
   getRoute,
+  getRouteBRouter,
   drawRoute,
   drawEndpointMarkers,
   fitRouteBounds,
   clearRoute,
-  setupRouteDrag,
+  setupLongPressAdd,
   renderViaMarkers
 } from './routing.js'
 import { showToast } from './toast.js'
@@ -60,12 +61,14 @@ initDestinationPanel(appRoot, onDestinationChosen)
 initTripPanel(appRoot, {
   onStart: handleStartTrip,
   onCancel: handleCancelTrip,
-  onProfileChange: handleProfileChange
+  onProfileChange: handleProfileChange,
+  onPrefsChange: handlePrefsChange
 })
 
 // Ordered waypoints: [start, via1, via2, ..., end]. Each is {lng, lat, name?}.
 let waypoints = []
 let currentProfile = 'cycling-electric' // default; user can switch on the overview
+let routePrefs = { avoidHighways: true, avoidHills: false }
 let isRerouting = false
 
 document.getElementById('locate-btn').addEventListener('click', () => {
@@ -77,7 +80,7 @@ map.on('load', () => {
     updateUpcomingStep([lngLat[0], lngLat[1]])
   })
   flyToCurrentLocation(map, { silent: true })
-  setupRouteDrag(map, onAddVia)
+  setupLongPressAdd(map, onAddVia)
 })
 
 async function onDestinationChosen(dest) {
@@ -117,11 +120,19 @@ function onRemoveVia(viaIdx) {
   reroute({ fit: false })
 }
 
+async function fetchRoute() {
+  // Dispatch to the right engine based on the selected mode.
+  if (currentProfile === 'brouter-safety') {
+    return getRouteBRouter(waypoints, 'safety')
+  }
+  return getRoute(waypoints, currentProfile, routePrefs)
+}
+
 async function reroute({ fit = false, isInitial = false } = {}) {
   if (waypoints.length < 2 || isRerouting) return
   isRerouting = true
   try {
-    const geo = await getRoute(waypoints, currentProfile)
+    const geo = await fetchRoute()
     drawRoute(map, geo)
     drawEndpointMarkers(map, waypoints[0], waypoints[waypoints.length - 1])
     const vias = waypoints.slice(1, -1)
@@ -129,9 +140,9 @@ async function reroute({ fit = false, isInitial = false } = {}) {
     if (fit) fitRouteBounds(map, geo)
     if (isInitial) {
       const destName = waypoints[waypoints.length - 1].name || 'Destination'
-      showOverview(geo, destName, currentProfile)
+      showOverview(geo, destName, currentProfile, routePrefs)
     } else {
-      updateRoute(geo, currentProfile)
+      updateRoute(geo, currentProfile, routePrefs)
     }
   } catch (e) {
     console.error(e)
@@ -159,6 +170,11 @@ function handleCancelTrip() {
 function handleProfileChange(profile) {
   if (profile === currentProfile) return
   currentProfile = profile
+  reroute({ fit: false })
+}
+
+function handlePrefsChange(delta) {
+  routePrefs = { ...routePrefs, ...delta }
   reroute({ fit: false })
 }
 

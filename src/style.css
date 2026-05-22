@@ -56,6 +56,7 @@ button {
   width: 100%;
   height: 100%;
   min-height: 0;
+  -webkit-touch-callout: none; /* suppress iOS long-press system menu */
 }
 
 /* --- Locate FAB --- */
@@ -156,16 +157,41 @@ button {
 }
 .via-remove:active { transform: scale(0.92); }
 
-/* Ghost marker shown while dragging the route line */
-.drag-ghost {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #ffb627;
-  border: 3px solid #fff;
-  box-shadow: 0 0 0 5px rgba(255, 182, 39, 0.28), 0 0 14px rgba(255, 182, 39, 0.5);
-  pointer-events: none;
+/* Route preferences (overview panel) */
+.trip-prefs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding-top: 0.15rem;
 }
+.pref-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  font-size: 0.93rem;
+  color: var(--fg);
+  cursor: pointer;
+  padding: 0.45rem 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.pref-row input[type="checkbox"] {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.trip-prefs.disabled .pref-row {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.prefs-note {
+  font-size: 0.78rem;
+  color: var(--muted);
+  padding: 0.35rem 0.1rem 0;
+  line-height: 1.35;
+}
+.prefs-note.hidden { display: none; }
 
 /* --- Destination panel (bottom sheet) --- */
 .destination-panel {
@@ -407,13 +433,17 @@ button {
 }
 .profile-btn {
   flex: 1;
-  padding: 0.7rem 0.5rem;
+  min-width: 0;
+  padding: 0.7rem 0.35rem;
   background: rgba(255,255,255,0.04);
   border: 1px solid var(--border);
   border-radius: 10px;
   color: var(--fg);
-  font-size: 0.93rem;
+  font-size: 0.88rem;
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .profile-btn.active {
   background: var(--accent-dark);

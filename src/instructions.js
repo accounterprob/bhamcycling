@@ -22,18 +22,21 @@ let geometry = []
 let currentStepIdx = -1
 let lastDistanceToTurn = null
 let currentProfile = 'cycling-electric'
+let currentPrefs = { avoidHighways: true, avoidHills: false }
 let currentDestName = ''
 let currentSummary = { distance: 0, duration: 0 }
 
 let onStartCb = null
 let onCancelCb = null
 let onProfileChangeCb = null
+let onPrefsChangeCb = null
 
 export function initTripPanel(rootEl, callbacks) {
   appRoot = rootEl
   onStartCb = callbacks.onStart
   onCancelCb = callbacks.onCancel
   onProfileChangeCb = callbacks.onProfileChange
+  onPrefsChangeCb = callbacks.onPrefsChange
 
   panelEl = document.createElement('div')
   panelEl.className = 'trip-panel hidden'
@@ -44,19 +47,21 @@ export function initTripPanel(rootEl, callbacks) {
   rootEl.appendChild(bannerEl)
 }
 
-export function showOverview(routeGeoJson, destName, profile) {
+export function showOverview(routeGeoJson, destName, profile, prefs) {
   ingestRoute(routeGeoJson)
   currentDestName = destName || 'Destination'
   currentProfile = profile
+  if (prefs) currentPrefs = { ...currentPrefs, ...prefs }
   mode = 'overview'
   render()
   showPanel()
   bannerEl.classList.add('hidden')
 }
 
-export function updateRoute(routeGeoJson, profile) {
+export function updateRoute(routeGeoJson, profile, prefs) {
   ingestRoute(routeGeoJson)
   if (profile) currentProfile = profile
+  if (prefs) currentPrefs = { ...currentPrefs, ...prefs }
   render()
 }
 
@@ -167,12 +172,24 @@ function renderOverview() {
           <div class="trip-stat-label">Distance</div>
         </div>
       </div>
-      <div class="trip-profiles" role="radiogroup" aria-label="Bike type">
+      <div class="trip-profiles" role="radiogroup" aria-label="Routing mode">
         <button type="button" class="profile-btn" data-profile="cycling-electric" role="radio">⚡ E-bike</button>
         <button type="button" class="profile-btn" data-profile="cycling-regular" role="radio">🚲 Regular</button>
+        <button type="button" class="profile-btn" data-profile="brouter-safety" role="radio">🛡️ Safest</button>
+      </div>
+      <div class="trip-prefs">
+        <label class="pref-row">
+          <input type="checkbox" data-pref="avoidHighways" />
+          <span>Avoid highways &amp; busy roads</span>
+        </label>
+        <label class="pref-row">
+          <input type="checkbox" data-pref="avoidHills" />
+          <span>Avoid steep hills</span>
+        </label>
+        <div class="prefs-note hidden">Safest mode uses its own road-safety rules — toggles above don't apply.</div>
       </div>
       <button type="button" class="trip-start">Start Trip</button>
-      <div class="trip-hint">Drag the route to add a stop · tap × to remove</div>
+      <div class="trip-hint">Long-press the map to add a stop · tap × to remove</div>
     </div>
   `
   panelEl.querySelector('.trip-destination').textContent = currentDestName
@@ -189,6 +206,19 @@ function renderOverview() {
       }
     })
   }
+  const safest = currentProfile === 'brouter-safety'
+  for (const cb of panelEl.querySelectorAll('input[data-pref]')) {
+    const key = cb.dataset.pref
+    cb.checked = !!currentPrefs[key]
+    cb.disabled = safest
+    cb.addEventListener('change', () => {
+      if (typeof onPrefsChangeCb === 'function') {
+        onPrefsChangeCb({ [key]: cb.checked })
+      }
+    })
+  }
+  panelEl.querySelector('.prefs-note')?.classList.toggle('hidden', !safest)
+  panelEl.querySelector('.trip-prefs')?.classList.toggle('disabled', safest)
   panelEl.querySelector('.trip-close').addEventListener('click', () => {
     if (typeof onCancelCb === 'function') onCancelCb()
   })
