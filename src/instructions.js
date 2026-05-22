@@ -22,7 +22,7 @@ let geometry = []
 let currentStepIdx = -1
 let lastDistanceToTurn = null
 let currentProfile = 'cycling-electric'
-let currentPrefs = { avoidHighways: true, avoidHills: false }
+let currentPrefs = { avoidHills: false }
 let currentDestName = ''
 let currentSummary = { distance: 0, duration: 0 }
 
@@ -179,14 +179,10 @@ function renderOverview() {
       </div>
       <div class="trip-prefs">
         <label class="pref-row">
-          <input type="checkbox" data-pref="avoidHighways" />
-          <span>Avoid highways &amp; busy roads</span>
-        </label>
-        <label class="pref-row">
           <input type="checkbox" data-pref="avoidHills" />
           <span>Avoid steep hills</span>
         </label>
-        <div class="prefs-note hidden">Safest mode uses its own road-safety rules — toggles above don't apply.</div>
+        <div class="prefs-note hidden">Safest mode uses its own road-safety rules — pick that for max avoidance of busy roads.</div>
       </div>
       <button type="button" class="trip-start">Start Trip</button>
       <div class="trip-hint">Long-press the map to add a stop · tap × to remove</div>

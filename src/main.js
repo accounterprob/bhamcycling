@@ -68,7 +68,7 @@ initTripPanel(appRoot, {
 // Ordered waypoints: [start, via1, via2, ..., end]. Each is {lng, lat, name?}.
 let waypoints = []
 let currentProfile = 'cycling-electric' // default; user can switch on the overview
-let routePrefs = { avoidHighways: true, avoidHills: false }
+let routePrefs = { avoidHills: false }
 let isRerouting = false
 
 document.getElementById('locate-btn').addEventListener('click', () => {

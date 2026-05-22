@@ -28,9 +28,10 @@ export async function getRoute(waypoints, profile = 'cycling-electric', prefs = 
     throw new Error('Need at least 2 waypoints')
   }
   const url = `${ORS_BASE}/${profile}/geojson`
-  const avoid = ['steps', 'fords']
-  if (prefs.avoidHighways !== false) avoid.push('highways')
-  const options = { avoid_features: avoid }
+  // Note: ORS doesn't accept "highways" in avoid_features for cycling profiles
+  // (cycling already routes around motorways by default). Only car profiles
+  // allow it. Use the Safest mode (BRouter) when you want max road avoidance.
+  const options = { avoid_features: ['steps', 'fords'] }
   if (prefs.avoidHills) {
     options.profile_params = { restrictions: { gradient: 8 } }
   }
