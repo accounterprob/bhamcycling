@@ -1,0 +1,420 @@
+:root {
+  --bg: #0f1115;
+  --panel: rgba(15, 17, 21, 0.94);
+  --panel-solid: #161922;
+  --fg: #f5f5f5;
+  --muted: #9aa3b2;
+  --accent: #38d1ff;
+  --accent-dark: #0a3a4a;
+  --danger: #ff5d6c;
+  --ok: #5dd39e;
+  --border: rgba(255, 255, 255, 0.08);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  height: 100dvh;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input, textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-rows: 1fr auto;
+}
+
+#map {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+/* --- Locate FAB --- */
+.fab {
+  position: fixed;
+  right: calc(0.9rem + var(--safe-right));
+  bottom: calc(1rem + var(--safe-bottom));
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--panel-solid);
+  color: var(--accent);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+.fab:active { transform: scale(0.94); }
+
+/* When a route panel is shown at the bottom, lift the FAB above it. */
+.has-instructions .fab {
+  bottom: calc(var(--instructions-height, 40dvh) + 0.75rem + var(--safe-bottom));
+}
+
+/* --- User location marker --- */
+.user-marker {
+  width: 18px;
+  height: 18px;
+  background: var(--accent);
+  border: 3px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 6px rgba(56, 209, 255, 0.18), 0 0 14px rgba(56, 209, 255, 0.5);
+}
+
+/* --- Endpoint markers --- */
+.endpoint-marker {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--panel-solid);
+  color: var(--fg);
+  border: 3px solid var(--accent);
+  font-weight: 700;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5);
+}
+.endpoint-end { border-color: var(--ok); }
+
+/* --- Via waypoints (orange, draggable, long-press to remove) --- */
+.via-marker {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #ffb627;
+  color: #1a1a1a;
+  border: 3px solid #fff;
+  font-weight: 700;
+  font-size: 0.82rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5);
+  cursor: grab;
+  touch-action: none;
+}
+.via-marker:active { cursor: grabbing; transform: scale(1.08); }
+
+/* Ghost marker shown while dragging the route line */
+.drag-ghost {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffb627;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 5px rgba(255, 182, 39, 0.28), 0 0 14px rgba(255, 182, 39, 0.5);
+  pointer-events: none;
+}
+
+/* --- Destination panel (bottom sheet) --- */
+.destination-panel {
+  position: fixed;
+  left: calc(0.75rem + var(--safe-left));
+  right: calc(0.75rem + var(--safe-right));
+  bottom: calc(1rem + var(--safe-bottom));
+  z-index: 70;
+  background: var(--panel);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  transition: transform 220ms ease, opacity 200ms ease;
+}
+
+.destination-panel.collapsed .search-body {
+  display: none;
+}
+.destination-panel:not(.collapsed) .search-toggle {
+  display: none;
+}
+
+.search-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.95rem 1rem;
+  background: transparent;
+  border: none;
+  font-size: 1rem;
+  color: var(--fg);
+  text-align: left;
+}
+.search-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-dark);
+  color: var(--accent);
+  font-size: 1.05rem;
+}
+.search-toggle-text { color: var(--muted); font-weight: 500; }
+
+.search-body {
+  display: flex;
+  flex-direction: column;
+  max-height: min(72dvh, 560px);
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 0.75rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.search-input {
+  flex: 1;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--fg);
+  font-size: 1rem;
+  padding: 0.7rem 0.85rem;
+  outline: none;
+}
+.search-input::placeholder { color: var(--muted); }
+.search-input:focus { border-color: var(--accent); }
+
+.icon-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+}
+
+.search-results {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  max-height: 38dvh;
+}
+
+.search-results:empty { display: none; }
+
+.result-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 0.7rem 1rem;
+  color: var(--fg);
+  font-size: 0.92rem;
+  line-height: 1.3;
+}
+.result-item:active { background: rgba(255,255,255,0.05); }
+.result-item.error { color: var(--danger); }
+
+.favorites-section {
+  padding: 0.75rem 0.5rem 0.75rem;
+  border-top: 1px solid var(--border);
+}
+.favorites-section h3 {
+  margin: 0.1rem 0.5rem 0.4rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.favorite-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+  padding: 0.1rem 0.25rem;
+}
+
+.favorite-go {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  background: transparent;
+  border: none;
+  padding: 0.65rem 0.65rem;
+  border-radius: 10px;
+  color: var(--fg);
+  text-align: left;
+  font-size: 0.95rem;
+}
+.favorite-go:not(:disabled):active { background: rgba(255,255,255,0.05); }
+.favorite-go:disabled { color: var(--muted); }
+.fav-icon { color: var(--accent); }
+.fav-name { flex: 1; }
+.fav-empty { color: var(--muted); font-size: 0.78rem; }
+
+.favorite-edit {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  width: 38px;
+  font-size: 1.1rem;
+  border-radius: 10px;
+}
+.favorite-edit:active { background: rgba(255,255,255,0.05); }
+
+/* --- Instructions panel (bottom, slides up above destination panel) --- */
+.instructions-panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  background: var(--panel-solid);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  max-height: 50dvh;
+  padding-bottom: var(--safe-bottom);
+  transform: translateY(100%);
+  transition: transform 220ms ease;
+}
+.instructions-panel.visible { transform: translateY(0); }
+
+.instructions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.route-summary {
+  display: flex;
+  gap: 0.8rem;
+  align-items: baseline;
+}
+.summary-distance { font-size: 1.05rem; font-weight: 600; }
+.summary-duration { color: var(--muted); font-size: 0.9rem; }
+.close-route {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 1.2rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 8px;
+}
+.close-route:active { background: rgba(255,255,255,0.06); }
+
+.instructions-list {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.25rem 0;
+}
+
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.step-icon {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  color: var(--fg);
+}
+.step-body { min-width: 0; flex: 1; }
+.step-instruction {
+  font-size: 0.95rem;
+  line-height: 1.3;
+}
+.step-distance {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 0.1rem;
+}
+
+.step.upcoming {
+  background: rgba(56, 209, 255, 0.08);
+}
+.step.upcoming .step-icon {
+  background: var(--accent);
+  color: #001a22;
+}
+.step.upcoming .step-instruction { font-weight: 600; }
+
+/* When the instructions panel is showing, hide the destination collapsed pill
+   so it doesn't sit on top of it. The user can still clear & re-search. */
+.has-instructions .destination-panel.collapsed { display: none; }
+
+/* --- Toast --- */
+.toast {
+  position: fixed;
+  left: 50%;
+  top: calc(var(--safe-top) + 1rem);
+  transform: translateX(-50%) translateY(-20px);
+  background: var(--panel-solid);
+  color: var(--fg);
+  padding: 0.6rem 0.95rem;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--border);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 100;
+  transition: opacity 180ms ease, transform 180ms ease;
+  max-width: 88vw;
+  text-align: center;
+}
+.toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.error { border-color: var(--danger); color: var(--danger); }
+
+/* --- MapLibre control sizing tweaks --- */
+.maplibregl-ctrl-attrib { font-size: 10px; }
+.maplibregl-ctrl-top-right { top: calc(var(--safe-top) + 0.5rem); }
