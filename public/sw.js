@@ -1,14 +1,15 @@
 /* Bham Cycle Nav — service worker
  * Strategy:
- *   - Same-origin app shell  → cache-first, populated lazily on fetch
+ *   - Same-origin app shell  → network-first, cache fallback (fresh code wins
+ *                              when online; cached shell keeps it usable offline)
  *   - OpenFreeMap tiles      → stale-while-revalidate (separate cache so it
  *                              can be cleared without nuking the app shell)
  *   - Nominatim & ORS        → network-only (don't cache search/routing)
  *
- * Bump CACHE_VERSION whenever you want to force a clean refresh.
+ * Bump CACHE_VERSION on breaking changes — old caches are cleared on activate.
  */
 
-const CACHE_VERSION = 'v1'
+const CACHE_VERSION = 'v2'
 const APP_CACHE = `bham-cycle-app-${CACHE_VERSION}`
 const TILE_CACHE = `bham-cycle-tiles-${CACHE_VERSION}`
 const VALID_CACHES = new Set([APP_CACHE, TILE_CACHE])
@@ -53,25 +54,24 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Same-origin app shell: cache-first, fill on demand
+  // Same-origin app shell: network-first so fresh deploys always win when
+  // online; cache acts purely as an offline fallback.
   if (url.origin === self.location.origin) {
-    event.respondWith(cacheFirst(req, APP_CACHE))
+    event.respondWith(networkFirst(req, APP_CACHE))
   }
 })
 
-async function cacheFirst(req, cacheName) {
+async function networkFirst(req, cacheName) {
   const cache = await caches.open(cacheName)
-  const cached = await cache.match(req, { ignoreSearch: false })
-  if (cached) return cached
   try {
     const resp = await fetch(req)
-    // Only cache successful, basic (same-origin) responses
     if (resp && resp.ok && resp.type === 'basic') {
       cache.put(req, resp.clone())
     }
     return resp
   } catch (err) {
-    // Offline + nothing cached → return a minimal fallback for navigations
+    const cached = await cache.match(req, { ignoreSearch: false })
+    if (cached) return cached
     if (req.mode === 'navigate') {
       const indexFallback = await cache.match('./') || await cache.match('./index.html')
       if (indexFallback) return indexFallback
