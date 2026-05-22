@@ -27,6 +27,7 @@ jobs:
       - run: npm run build
         env:
           VITE_ORS_API_KEY: ${{ secrets.VITE_ORS_API_KEY }}
+          VITE_STADIA_API_KEY: ${{ secrets.VITE_STADIA_API_KEY }}
       - uses: actions/configure-pages@v4
       - uses: actions/upload-pages-artifact@v3
         with:

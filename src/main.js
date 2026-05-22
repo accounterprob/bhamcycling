@@ -33,6 +33,7 @@ import {
 import {
   getRoute,
   getRouteBRouter,
+  getRouteValhalla,
   drawRoute,
   drawEndpointMarkers,
   fitRouteBounds,
@@ -62,13 +63,19 @@ initTripPanel(appRoot, {
   onStart: handleStartTrip,
   onCancel: handleCancelTrip,
   onProfileChange: handleProfileChange,
-  onPrefsChange: handlePrefsChange
+  onPrefsChange: handlePrefsChange,
+  onCustomPrefsChange: handleCustomPrefsChange
 })
 
 // Ordered waypoints: [start, via1, via2, ..., end]. Each is {lng, lat, name?}.
 let waypoints = []
 let currentProfile = 'cycling-electric' // default; user can switch on the overview
-let routePrefs = { avoidHills: false }
+let routePrefs = {}
+let customRoutePrefs = {
+  useRoads: 0.3,   // 0 = avoid busy roads, 1 = prefer fast roads
+  useHills: 0.5,   // 0 = avoid hills, 1 = neutral on hills
+  bicycleType: 'Hybrid'
+}
 let isRerouting = false
 
 document.getElementById('locate-btn').addEventListener('click', () => {
@@ -125,6 +132,9 @@ async function fetchRoute() {
   if (currentProfile === 'brouter-safety') {
     return getRouteBRouter(waypoints, 'safety')
   }
+  if (currentProfile === 'valhalla-custom') {
+    return getRouteValhalla(waypoints, customRoutePrefs)
+  }
   return getRoute(waypoints, currentProfile, routePrefs)
 }
 
@@ -140,9 +150,9 @@ async function reroute({ fit = false, isInitial = false } = {}) {
     if (fit) fitRouteBounds(map, geo)
     if (isInitial) {
       const destName = waypoints[waypoints.length - 1].name || 'Destination'
-      showOverview(geo, destName, currentProfile, routePrefs)
+      showOverview(geo, destName, currentProfile, routePrefs, customRoutePrefs)
     } else {
-      updateRoute(geo, currentProfile, routePrefs)
+      updateRoute(geo, currentProfile, routePrefs, customRoutePrefs)
     }
   } catch (e) {
     console.error(e)
@@ -176,6 +186,11 @@ function handleProfileChange(profile) {
 function handlePrefsChange(delta) {
   routePrefs = { ...routePrefs, ...delta }
   reroute({ fit: false })
+}
+
+function handleCustomPrefsChange(delta) {
+  customRoutePrefs = { ...customRoutePrefs, ...delta }
+  if (currentProfile === 'valhalla-custom') reroute({ fit: false })
 }
 
 function getOneShotPosition() {

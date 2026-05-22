@@ -22,7 +22,8 @@ let geometry = []
 let currentStepIdx = -1
 let lastDistanceToTurn = null
 let currentProfile = 'cycling-electric'
-let currentPrefs = { avoidHills: false }
+let currentPrefs = {}
+let currentCustomPrefs = { useRoads: 0.3, useHills: 0.5, bicycleType: 'Hybrid' }
 let currentDestName = ''
 let currentSummary = { distance: 0, duration: 0 }
 
@@ -30,6 +31,7 @@ let onStartCb = null
 let onCancelCb = null
 let onProfileChangeCb = null
 let onPrefsChangeCb = null
+let onCustomPrefsChangeCb = null
 
 export function initTripPanel(rootEl, callbacks) {
   appRoot = rootEl
@@ -37,6 +39,7 @@ export function initTripPanel(rootEl, callbacks) {
   onCancelCb = callbacks.onCancel
   onProfileChangeCb = callbacks.onProfileChange
   onPrefsChangeCb = callbacks.onPrefsChange
+  onCustomPrefsChangeCb = callbacks.onCustomPrefsChange
 
   panelEl = document.createElement('div')
   panelEl.className = 'trip-panel hidden'
@@ -47,21 +50,23 @@ export function initTripPanel(rootEl, callbacks) {
   rootEl.appendChild(bannerEl)
 }
 
-export function showOverview(routeGeoJson, destName, profile, prefs) {
+export function showOverview(routeGeoJson, destName, profile, prefs, customPrefs) {
   ingestRoute(routeGeoJson)
   currentDestName = destName || 'Destination'
   currentProfile = profile
   if (prefs) currentPrefs = { ...currentPrefs, ...prefs }
+  if (customPrefs) currentCustomPrefs = { ...currentCustomPrefs, ...customPrefs }
   mode = 'overview'
   render()
   showPanel()
   bannerEl.classList.add('hidden')
 }
 
-export function updateRoute(routeGeoJson, profile, prefs) {
+export function updateRoute(routeGeoJson, profile, prefs, customPrefs) {
   ingestRoute(routeGeoJson)
   if (profile) currentProfile = profile
   if (prefs) currentPrefs = { ...currentPrefs, ...prefs }
+  if (customPrefs) currentCustomPrefs = { ...currentCustomPrefs, ...customPrefs }
   render()
 }
 
@@ -172,17 +177,29 @@ function renderOverview() {
           <div class="trip-stat-label">Distance</div>
         </div>
       </div>
-      <div class="trip-profiles" role="radiogroup" aria-label="Routing mode">
+      <div class="trip-profiles trip-profiles-grid" role="radiogroup" aria-label="Routing mode">
         <button type="button" class="profile-btn" data-profile="cycling-electric" role="radio">⚡ E-bike</button>
         <button type="button" class="profile-btn" data-profile="cycling-regular" role="radio">🚲 Regular</button>
         <button type="button" class="profile-btn" data-profile="brouter-safety" role="radio">🛡️ Safest</button>
+        <button type="button" class="profile-btn" data-profile="valhalla-custom" role="radio">🎚️ Custom</button>
       </div>
-      <div class="trip-prefs">
-        <label class="pref-row">
-          <input type="checkbox" data-pref="avoidHills" />
-          <span>Avoid steep hills</span>
-        </label>
-        <div class="prefs-note hidden">Safest mode uses its own road-safety rules — pick that for max avoidance of busy roads.</div>
+      <div class="trip-sliders hidden">
+        <div class="slider-row">
+          <div class="slider-label">Road preference</div>
+          <input type="range" class="slider" min="0" max="1" step="0.05" data-slider="useRoads" />
+          <div class="slider-ends">
+            <span>Quiet streets</span>
+            <span>Busy roads</span>
+          </div>
+        </div>
+        <div class="slider-row">
+          <div class="slider-label">Hill preference</div>
+          <input type="range" class="slider" min="0" max="1" step="0.05" data-slider="useHills" />
+          <div class="slider-ends">
+            <span>Avoid hills</span>
+            <span>Don't care</span>
+          </div>
+        </div>
       </div>
       <button type="button" class="trip-start">Start Trip</button>
       <div class="trip-hint">Long-press the map to add a stop · tap × to remove</div>
@@ -202,19 +219,19 @@ function renderOverview() {
       }
     })
   }
-  const safest = currentProfile === 'brouter-safety'
-  for (const cb of panelEl.querySelectorAll('input[data-pref]')) {
-    const key = cb.dataset.pref
-    cb.checked = !!currentPrefs[key]
-    cb.disabled = safest
-    cb.addEventListener('change', () => {
-      if (typeof onPrefsChangeCb === 'function') {
-        onPrefsChangeCb({ [key]: cb.checked })
+  // Show sliders only in Custom mode
+  const isCustom = currentProfile === 'valhalla-custom'
+  panelEl.querySelector('.trip-sliders').classList.toggle('hidden', !isCustom)
+  for (const slider of panelEl.querySelectorAll('input[data-slider]')) {
+    const key = slider.dataset.slider
+    slider.value = String(currentCustomPrefs[key] ?? 0.5)
+    // 'change' fires on release (not during drag) — avoids hammering the API
+    slider.addEventListener('change', () => {
+      if (typeof onCustomPrefsChangeCb === 'function') {
+        onCustomPrefsChangeCb({ [key]: parseFloat(slider.value) })
       }
     })
   }
-  panelEl.querySelector('.prefs-note')?.classList.toggle('hidden', !safest)
-  panelEl.querySelector('.trip-prefs')?.classList.toggle('disabled', safest)
   panelEl.querySelector('.trip-close').addEventListener('click', () => {
     if (typeof onCancelCb === 'function') onCancelCb()
   })

@@ -2,7 +2,9 @@ import maplibregl from 'maplibre-gl'
 
 const ORS_BASE = 'https://api.openrouteservice.org/v2/directions'
 const BROUTER_BASE = 'https://brouter.de/brouter'
+const STADIA_BASE = 'https://api.stadiamaps.com/route/v1'
 const API_KEY = import.meta.env.VITE_ORS_API_KEY
+const STADIA_KEY = import.meta.env.VITE_STADIA_API_KEY
 
 const SOURCE_ID = 'route'
 const CASING_ID = 'route-casing'
@@ -28,13 +30,12 @@ export async function getRoute(waypoints, profile = 'cycling-electric', prefs = 
     throw new Error('Need at least 2 waypoints')
   }
   const url = `${ORS_BASE}/${profile}/geojson`
-  // Note: ORS doesn't accept "highways" in avoid_features for cycling profiles
-  // (cycling already routes around motorways by default). Only car profiles
-  // allow it. Use the Safest mode (BRouter) when you want max road avoidance.
+  // ORS exposes almost no cycling customization. avoid_features for cycling
+  // accepts only steps/fords/ferries (not highways — already avoided by the
+  // cycling profile). profile_params don't accept gradient/maxspeed either.
+  // For real preference dials (avoid busy roads, hill aversion, etc.) use
+  // the Safest mode (BRouter).
   const options = { avoid_features: ['steps', 'fords'] }
-  if (prefs.avoidHills) {
-    options.profile_params = { restrictions: { gradient: 8 } }
-  }
   const body = {
     coordinates: waypoints.map((w) => [w.lng, w.lat]),
     instructions: true,
@@ -207,6 +208,142 @@ function brouterInstruction(c, exitNumber) {
   }
   return 'Continue'
 }
+
+/* ---------- Valhalla via Stadia Maps ----------
+ * Slider-driven cycling. costing_options.bicycle exposes:
+ *   use_roads          0.0 = avoid busy roads, 1.0 = prefer fast roads
+ *   use_hills          0.0 = avoid hills, 1.0 = embrace
+ *   avoid_bad_surfaces 0.0 = OK with anything, 1.0 = paved only
+ *   bicycle_type       Hybrid | Road | Cross | Mountain
+ *   cycling_speed      km/h, baseline for time estimates
+ */
+export async function getRouteValhalla(waypoints, opts = {}) {
+  if (!STADIA_KEY) throw new Error('Missing VITE_STADIA_API_KEY (set it in .env)')
+  if (!Array.isArray(waypoints) || waypoints.length < 2) {
+    throw new Error('Need at least 2 waypoints')
+  }
+  const body = {
+    locations: waypoints.map((w) => ({ lat: w.lat, lon: w.lng })),
+    costing: 'bicycle',
+    costing_options: {
+      bicycle: {
+        bicycle_type: opts.bicycleType || 'Hybrid',
+        cycling_speed: opts.cyclingSpeed ?? 22,
+        use_roads: clamp01(opts.useRoads ?? 0.3),
+        use_hills: clamp01(opts.useHills ?? 0.5),
+        avoid_bad_surfaces: clamp01(opts.avoidBadSurfaces ?? 0.25),
+        use_living_streets: 0.8,
+        maneuver_penalty: 5
+      }
+    },
+    directions_options: { units: 'kilometers', language: 'en-US' }
+  }
+  const res = await fetch(`${STADIA_BASE}?api_key=${encodeURIComponent(STADIA_KEY)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
+  if (!res.ok) {
+    let detail = ''
+    try { const j = await res.json(); detail = j?.error || JSON.stringify(j) }
+    catch { detail = await res.text() }
+    throw new Error(`Valhalla ${res.status}: ${detail}`.slice(0, 240))
+  }
+  const data = await res.json()
+  if (!data?.trip?.legs?.length) throw new Error('Valhalla: empty trip')
+  return adaptValhallaToORS(data)
+}
+
+function adaptValhallaToORS(valhallaJson) {
+  const trip = valhallaJson.trip
+  const allCoords = []
+  const steps = []
+  let totalDistance = 0
+  let totalDuration = 0
+
+  for (const leg of trip.legs) {
+    const offset = allCoords.length
+    const coords = decodePolyline(leg.shape, 6)
+    allCoords.push(...coords)
+    for (const m of (leg.maneuvers || [])) {
+      steps.push({
+        distance: (m.length || 0) * 1000, // km → m
+        duration: m.time || 0,
+        type: valhallaTypeToOrs(m.type),
+        instruction: m.instruction || 'Continue',
+        name: (m.street_names || [])[0] || '',
+        way_points: [
+          (m.begin_shape_index || 0) + offset,
+          (m.end_shape_index || 0) + offset
+        ]
+      })
+    }
+    totalDistance += (leg.summary?.length || 0) * 1000
+    totalDuration += leg.summary?.time || 0
+  }
+
+  return {
+    type: 'FeatureCollection',
+    features: [{
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates: allCoords },
+      properties: {
+        engine: 'valhalla',
+        segments: [{ distance: totalDistance, duration: totalDuration, steps }],
+        summary: { distance: totalDistance, duration: totalDuration },
+        way_points: [0, Math.max(0, allCoords.length - 1)]
+      }
+    }]
+  }
+}
+
+// Valhalla maneuver type → ORS instruction code (so our icons keep working)
+function valhallaTypeToOrs(t) {
+  switch (t) {
+    case 1: return 11   // depart
+    case 4: case 5: case 6: return 10 // destination/arrive
+    case 8: case 22: case 25: return 6 // continue / stay straight / merge
+    case 9: return 5    // slight right
+    case 10: return 1   // right
+    case 11: return 3   // sharp right
+    case 12: case 13: return 9 // u-turn
+    case 14: return 2   // sharp left
+    case 15: return 0   // left
+    case 16: return 4   // slight left
+    case 23: return 13  // stay right
+    case 24: return 12  // stay left
+    case 26: return 7   // roundabout enter
+    case 27: return 8   // roundabout exit
+    default: return 6
+  }
+}
+
+// Google-style encoded polyline decoder. Valhalla uses precision 6.
+function decodePolyline(str, precision = 6) {
+  let index = 0, lat = 0, lng = 0
+  const out = []
+  const factor = Math.pow(10, precision)
+  while (index < str.length) {
+    let result = 0, shift = 0, byte
+    do {
+      byte = str.charCodeAt(index++) - 63
+      result |= (byte & 0x1f) << shift
+      shift += 5
+    } while (byte >= 0x20)
+    lat += (result & 1) ? ~(result >> 1) : (result >> 1)
+    result = 0; shift = 0
+    do {
+      byte = str.charCodeAt(index++) - 63
+      result |= (byte & 0x1f) << shift
+      shift += 5
+    } while (byte >= 0x20)
+    lng += (result & 1) ? ~(result >> 1) : (result >> 1)
+    out.push([lng / factor, lat / factor])
+  }
+  return out
+}
+
+function clamp01(n) { return Math.max(0, Math.min(1, Number(n) || 0)) }
 
 export function drawRoute(map, routeGeoJson) {
   // If layers already exist, just update the source — no flicker on re-route.

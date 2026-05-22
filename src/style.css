@@ -193,6 +193,65 @@ button {
 }
 .prefs-note.hidden { display: none; }
 
+/* Custom-mode sliders */
+.trip-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 0.25rem 0.1rem;
+}
+.trip-sliders.hidden { display: none; }
+.slider-row { display: flex; flex-direction: column; gap: 0.25rem; }
+.slider-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+.slider-ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 0.1rem;
+}
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 30px; /* generous touch target */
+  background: transparent;
+  cursor: pointer;
+}
+.slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(to right, var(--accent), rgba(255,255,255,0.12));
+}
+.slider::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(to right, var(--accent), rgba(255,255,255,0.12));
+}
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--fg);
+  border: 3px solid var(--accent);
+  margin-top: -10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.slider::-moz-range-thumb {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--fg);
+  border: 3px solid var(--accent);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
 /* --- Destination panel (bottom sheet) --- */
 .destination-panel {
   position: fixed;
@@ -429,6 +488,11 @@ button {
 
 .trip-profiles {
   display: flex;
+  gap: 0.5rem;
+}
+.trip-profiles-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 0.5rem;
 }
 .profile-btn {
