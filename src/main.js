@@ -12,7 +12,14 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   })
 }
 
-import { initMap, flyToCurrentLocation, startTracking, getLastKnownLocation } from './map.js'
+import {
+  initMap,
+  flyToCurrentLocation,
+  startTracking,
+  getLastKnownLocation,
+  startNavView,
+  stopNavView
+} from './map.js'
 import { initDestinationPanel } from './destination.js'
 import {
   initTripPanel,
@@ -20,7 +27,8 @@ import {
   updateRoute,
   startNavigating,
   clearTrip,
-  updateUpcomingStep
+  updateUpcomingStep,
+  getInitialBearing
 } from './instructions.js'
 import {
   getRoute,
@@ -57,7 +65,7 @@ initTripPanel(appRoot, {
 
 // Ordered waypoints: [start, via1, via2, ..., end]. Each is {lng, lat, name?}.
 let waypoints = []
-let currentProfile = 'cycling-regular'
+let currentProfile = 'cycling-electric' // default; user can switch on the overview
 let isRerouting = false
 
 document.getElementById('locate-btn').addEventListener('click', () => {
@@ -135,12 +143,17 @@ async function reroute({ fit = false, isInitial = false } = {}) {
 
 function handleStartTrip() {
   startNavigating()
+  // Enter the tilted, zoomed-in, follow-the-user nav camera. Seed bearing
+  // from the route's first few meters so the camera faces the right way.
+  const initialBearing = getInitialBearing()
+  startNavView(map, { initialBearing })
 }
 
 function handleCancelTrip() {
   waypoints = []
   clearRoute(map)
   clearTrip()
+  stopNavView(map)
 }
 
 function handleProfileChange(profile) {

@@ -441,20 +441,20 @@ button {
   text-align: center;
 }
 
-/* Navigating mode — scrollable turn-by-turn */
+/* Navigating mode — thin footer only; the upcoming turn lives in the top banner */
 .trip-panel.mode-navigating {
-  max-height: 50dvh;
+  max-height: none;
 }
-.nav-header {
+.nav-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0.7rem 1rem;
-  border-bottom: 1px solid var(--border);
+  gap: 0.5rem;
 }
 .nav-summary {
   display: flex;
-  gap: 0.55rem;
+  gap: 0.4rem;
   align-items: baseline;
 }
 .nav-duration { font-size: 1.05rem; font-weight: 700; }
@@ -471,6 +471,62 @@ button {
 }
 .nav-end:active { background: rgba(255, 93, 108, 0.24); }
 
+/* Top banner shown during navigation — big upcoming turn */
+.nav-banner {
+  position: fixed;
+  top: calc(var(--safe-top) + 0.6rem);
+  left: calc(0.6rem + var(--safe-left));
+  right: calc(0.6rem + var(--safe-right));
+  z-index: 55;
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.85rem 1rem;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+  transform: translateY(0);
+  transition: transform 220ms ease, opacity 200ms ease;
+}
+.nav-banner.hidden {
+  transform: translateY(-130%);
+  opacity: 0;
+  pointer-events: none;
+}
+.nav-banner-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #001a22;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.nav-banner-body {
+  min-width: 0;
+  flex: 1;
+}
+.nav-banner-distance {
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.nav-banner-instruction {
+  font-size: 0.95rem;
+  color: var(--muted);
+  margin-top: 0.3rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Old turn-by-turn list kept around in case we want it back as an
+   "expand list" sheet later; hidden in nav mode for now. */
 .instructions-list {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;

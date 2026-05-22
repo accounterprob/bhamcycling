@@ -1,19 +1,27 @@
-/* Trip panel — two modes:
- *   OVERVIEW    : trip summary, profile toggle, "Start Trip" button (shown
- *                 after picking a destination, before tapping Start)
- *   NAVIGATING  : scrollable turn-by-turn list with upcoming-step highlight
+import { computeBearing, haversine } from './map.js'
+
+/* Trip UI — three pieces, two modes:
  *
- * Same DOM container, content swaps based on mode.
+ *   OVERVIEW mode:
+ *     - bottom panel:  trip summary, profile toggle, "Start Trip"
+ *     - top banner:    hidden
+ *
+ *   NAVIGATING mode (Apple/Google-Maps-style):
+ *     - top banner:    big upcoming-turn callout that updates as you move
+ *     - bottom panel:  thin footer with remaining time/distance + End button
+ *     - full list:     hidden (we only show the next turn)
  */
 
 let panelEl = null
+let bannerEl = null
 let appRoot = null
 let mode = 'idle' // 'idle' | 'overview' | 'navigating'
 
 let stepsData = []
 let geometry = []
 let currentStepIdx = -1
-let currentProfile = 'cycling-regular'
+let lastDistanceToTurn = null
+let currentProfile = 'cycling-electric'
 let currentDestName = ''
 let currentSummary = { distance: 0, duration: 0 }
 
@@ -30,56 +38,77 @@ export function initTripPanel(rootEl, callbacks) {
   panelEl = document.createElement('div')
   panelEl.className = 'trip-panel hidden'
   rootEl.appendChild(panelEl)
+
+  bannerEl = document.createElement('div')
+  bannerEl.className = 'nav-banner hidden'
+  rootEl.appendChild(bannerEl)
 }
 
-/** Show the trip overview after a fresh destination + route fetch. */
 export function showOverview(routeGeoJson, destName, profile) {
   ingestRoute(routeGeoJson)
   currentDestName = destName || 'Destination'
   currentProfile = profile
   mode = 'overview'
   render()
-  show()
+  showPanel()
+  bannerEl.classList.add('hidden')
 }
 
-/** Called when route data changes (drag-reroute, profile change). */
 export function updateRoute(routeGeoJson, profile) {
   ingestRoute(routeGeoJson)
   if (profile) currentProfile = profile
-  if (mode === 'overview') render()
-  else if (mode === 'navigating') render()
-}
-
-/** Transition from OVERVIEW to NAVIGATING. */
-export function startNavigating() {
-  mode = 'navigating'
-  currentStepIdx = -1
   render()
 }
 
-/** Tear everything down — used by Cancel / End Trip. */
+export function startNavigating() {
+  mode = 'navigating'
+  currentStepIdx = -1
+  lastDistanceToTurn = null
+  render()
+}
+
 export function clearTrip() {
   mode = 'idle'
   stepsData = []
   geometry = []
   currentStepIdx = -1
+  lastDistanceToTurn = null
   panelEl.classList.add('hidden')
+  bannerEl.classList.add('hidden')
   appRoot.classList.remove('has-trip')
   document.documentElement.style.removeProperty('--trip-panel-height')
 }
 
-/** Live update from the geolocation watcher — only relevant during navigation. */
 export function updateUpcomingStep(userLngLat) {
-  if (mode !== 'navigating') return
-  if (!stepsData.length || !geometry.length) return
+  if (mode !== 'navigating' || !stepsData.length || !geometry.length) return
   const idx = nearestStepIndex(userLngLat)
-  if (idx === currentStepIdx) return
-  currentStepIdx = idx
-  for (const el of panelEl.querySelectorAll('.step')) {
-    el.classList.toggle('upcoming', Number(el.dataset.idx) === idx)
+  const step = stepsData[idx]
+  if (step?.way_points?.length >= 2) {
+    const endGeomIdx = step.way_points[1]
+    const stepEnd = geometry[endGeomIdx]
+    if (stepEnd) lastDistanceToTurn = haversine(userLngLat, stepEnd)
   }
-  const el = panelEl.querySelector(`.step[data-idx="${idx}"]`)
-  if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  if (idx !== currentStepIdx) {
+    currentStepIdx = idx
+    renderBanner()
+  } else {
+    // Step is the same; just refresh the live distance to the next turn
+    const distEl = bannerEl.querySelector('.nav-banner-distance')
+    if (distEl && lastDistanceToTurn != null) {
+      distEl.textContent = formatDistance(lastDistanceToTurn)
+    }
+  }
+}
+
+/** Initial bearing along the first ~10m of the route — used to face the
+ *  camera the right way the moment "Start Trip" is tapped. */
+export function getInitialBearing() {
+  if (geometry.length < 2) return null
+  const start = geometry[0]
+  let i = 1
+  while (i < geometry.length && haversine(start, geometry[i]) < 10) i++
+  if (i >= geometry.length) i = geometry.length - 1
+  return computeBearing(start, geometry[i])
 }
 
 // --- internals ---
@@ -96,19 +125,26 @@ function ingestRoute(routeGeoJson) {
   }
 }
 
-function show() {
+function showPanel() {
   panelEl.classList.remove('hidden')
   appRoot.classList.add('has-trip')
-  // Hint for FAB offset — actual panel height varies by mode
-  const h = mode === 'overview' ? '46dvh' : '44dvh'
+  const h = mode === 'overview' ? '46dvh' : '10dvh'
   document.documentElement.style.setProperty('--trip-panel-height', h)
 }
 
 function render() {
   panelEl.classList.toggle('mode-overview', mode === 'overview')
   panelEl.classList.toggle('mode-navigating', mode === 'navigating')
-  if (mode === 'overview') renderOverview()
-  else if (mode === 'navigating') renderNavigating()
+  if (mode === 'overview') {
+    renderOverview()
+    showPanel()
+    bannerEl.classList.add('hidden')
+  } else if (mode === 'navigating') {
+    renderNavFooter()
+    renderBanner()
+    showPanel()
+    bannerEl.classList.remove('hidden')
+  }
 }
 
 function renderOverview() {
@@ -132,8 +168,8 @@ function renderOverview() {
         </div>
       </div>
       <div class="trip-profiles" role="radiogroup" aria-label="Bike type">
-        <button type="button" class="profile-btn" data-profile="cycling-regular" role="radio">🚲 Regular</button>
         <button type="button" class="profile-btn" data-profile="cycling-electric" role="radio">⚡ E-bike</button>
+        <button type="button" class="profile-btn" data-profile="cycling-regular" role="radio">🚲 Regular</button>
       </div>
       <button type="button" class="trip-start">Start Trip</button>
       <div class="trip-hint">Drag the route to add a stop · tap × to remove</div>
@@ -143,8 +179,9 @@ function renderOverview() {
   panelEl.querySelectorAll('.trip-stat-value')[0].textContent = formatDuration(currentSummary.duration)
   panelEl.querySelectorAll('.trip-stat-value')[1].textContent = formatDistance(currentSummary.distance)
   for (const btn of panelEl.querySelectorAll('.profile-btn')) {
-    btn.classList.toggle('active', btn.dataset.profile === currentProfile)
-    btn.setAttribute('aria-checked', btn.dataset.profile === currentProfile ? 'true' : 'false')
+    const active = btn.dataset.profile === currentProfile
+    btn.classList.toggle('active', active)
+    btn.setAttribute('aria-checked', active ? 'true' : 'false')
     btn.addEventListener('click', () => {
       const p = btn.dataset.profile
       if (p && p !== currentProfile && typeof onProfileChangeCb === 'function') {
@@ -160,9 +197,9 @@ function renderOverview() {
   })
 }
 
-function renderNavigating() {
+function renderNavFooter() {
   panelEl.innerHTML = `
-    <div class="nav-header">
+    <div class="nav-footer">
       <div class="nav-summary">
         <span class="nav-duration"></span>
         <span class="nav-sep">·</span>
@@ -170,41 +207,34 @@ function renderNavigating() {
       </div>
       <button type="button" class="nav-end">End</button>
     </div>
-    <div class="instructions-list" role="list"></div>
   `
   panelEl.querySelector('.nav-duration').textContent = formatDuration(currentSummary.duration)
   panelEl.querySelector('.nav-distance').textContent = formatDistance(currentSummary.distance)
   panelEl.querySelector('.nav-end').addEventListener('click', () => {
     if (typeof onCancelCb === 'function') onCancelCb()
   })
-  const list = panelEl.querySelector('.instructions-list')
-  stepsData.forEach((step, idx) => {
-    const item = document.createElement('div')
-    item.className = 'step'
-    item.dataset.idx = String(idx)
-    item.setAttribute('role', 'listitem')
+}
 
-    const icon = document.createElement('div')
-    icon.className = 'step-icon'
-    icon.textContent = stepIcon(step.type)
-
-    const body = document.createElement('div')
-    body.className = 'step-body'
-
-    const instr = document.createElement('div')
-    instr.className = 'step-instruction'
-    instr.textContent = step.instruction || stepFallback(step)
-
-    const dist = document.createElement('div')
-    dist.className = 'step-distance'
-    dist.textContent = formatDistance(step.distance || 0)
-
-    body.appendChild(instr)
-    body.appendChild(dist)
-    item.appendChild(icon)
-    item.appendChild(body)
-    list.appendChild(item)
-  })
+function renderBanner() {
+  if (mode !== 'navigating' || !stepsData.length) {
+    bannerEl.classList.add('hidden')
+    return
+  }
+  const stepIdx = currentStepIdx >= 0 ? currentStepIdx : 0
+  const step = stepsData[stepIdx]
+  if (!step) { bannerEl.classList.add('hidden'); return }
+  const distance = lastDistanceToTurn != null ? lastDistanceToTurn : (step.distance || 0)
+  bannerEl.innerHTML = `
+    <div class="nav-banner-icon">${stepIcon(step.type)}</div>
+    <div class="nav-banner-body">
+      <div class="nav-banner-distance"></div>
+      <div class="nav-banner-instruction"></div>
+    </div>
+  `
+  bannerEl.querySelector('.nav-banner-distance').textContent = formatDistance(distance)
+  bannerEl.querySelector('.nav-banner-instruction').textContent =
+    step.instruction || stepFallback(step)
+  bannerEl.classList.remove('hidden')
 }
 
 function nearestStepIndex(userLngLat) {
@@ -221,18 +251,6 @@ function nearestStepIndex(userLngLat) {
   return stepsData.length - 1
 }
 
-function haversine(a, b) {
-  const R = 6371000
-  const toRad = (d) => (d * Math.PI) / 180
-  const lat1 = toRad(a[1]), lat2 = toRad(b[1])
-  const dLat = toRad(b[1] - a[1])
-  const dLon = toRad(b[0] - a[0])
-  const s =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2
-  return 2 * R * Math.asin(Math.sqrt(s))
-}
-
 function formatDistance(m) {
   if (m < 1000) return `${Math.round(m)} m`
   return `${(m / 1000).toFixed(m < 10000 ? 2 : 1)} km`
@@ -246,7 +264,6 @@ function formatDuration(s) {
   return rem ? `${h}h ${rem}m` : `${h}h`
 }
 
-// ORS instruction type codes
 const ICONS = {
   0: '←', 1: '→', 2: '↰', 3: '↱', 4: '↖', 5: '↗',
   6: '↑', 7: '⟲', 8: '⟳', 9: '↶', 10: '◉', 11: '▲',

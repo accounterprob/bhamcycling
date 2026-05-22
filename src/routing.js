@@ -112,6 +112,15 @@ export function setupRouteDrag(map, onAddVia) {
     // Single-touch only — let pinch-zoom pass through
     const touches = e.originalEvent?.touches
     if (touches && touches.length > 1) return
+    // Ignore if the touch is within ~40px of an existing via marker — those
+    // sit on the route line, so otherwise a marker-drag double-fires as a
+    // new-via add. The marker's own draggable still handles its move.
+    for (const m of viaMarkers) {
+      const p = map.project(m.getLngLat())
+      const dx = e.point.x - p.x
+      const dy = e.point.y - p.y
+      if (dx * dx + dy * dy < 40 * 40) return
+    }
     e.preventDefault()
 
     const startPoint = e.point
