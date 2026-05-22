@@ -1,81 +1,183 @@
+/* Trip panel — two modes:
+ *   OVERVIEW    : trip summary, profile toggle, "Start Trip" button (shown
+ *                 after picking a destination, before tapping Start)
+ *   NAVIGATING  : scrollable turn-by-turn list with upcoming-step highlight
+ *
+ * Same DOM container, content swaps based on mode.
+ */
+
 let panelEl = null
-let listEl = null
-let summaryDistanceEl = null
-let summaryDurationEl = null
-let onClearCb = null
+let appRoot = null
+let mode = 'idle' // 'idle' | 'overview' | 'navigating'
 
 let stepsData = []
 let geometry = []
 let currentStepIdx = -1
-let appRoot = null
+let currentProfile = 'cycling-regular'
+let currentDestName = ''
+let currentSummary = { distance: 0, duration: 0 }
 
-export function initInstructionsPanel(rootEl, onClear) {
+let onStartCb = null
+let onCancelCb = null
+let onProfileChangeCb = null
+
+export function initTripPanel(rootEl, callbacks) {
   appRoot = rootEl
-  onClearCb = onClear
+  onStartCb = callbacks.onStart
+  onCancelCb = callbacks.onCancel
+  onProfileChangeCb = callbacks.onProfileChange
 
   panelEl = document.createElement('div')
-  panelEl.className = 'instructions-panel'
-  panelEl.innerHTML = `
-    <div class="instructions-header">
-      <div class="route-summary">
-        <span class="summary-distance"></span>
-        <span class="summary-duration"></span>
-      </div>
-      <button class="close-route" type="button" aria-label="Clear route">✕</button>
-    </div>
-    <div class="instructions-list" role="list"></div>
-  `
+  panelEl.className = 'trip-panel hidden'
   rootEl.appendChild(panelEl)
-
-  listEl = panelEl.querySelector('.instructions-list')
-  summaryDistanceEl = panelEl.querySelector('.summary-distance')
-  summaryDurationEl = panelEl.querySelector('.summary-duration')
-
-  panelEl.querySelector('.close-route').addEventListener('click', () => {
-    clearInstructions()
-    if (onClearCb) onClearCb()
-  })
 }
 
-export function setRoute(routeGeoJson) {
-  const feature = routeGeoJson?.features?.[0]
-  if (!feature) return
-  geometry = feature.geometry.coordinates
-  const props = feature.properties || {}
-  stepsData = (props.segments || []).flatMap((seg) => seg.steps || [])
-
-  const distance = props.summary?.distance ?? 0
-  const duration = props.summary?.duration ?? 0
-  summaryDistanceEl.textContent = formatDistance(distance)
-  summaryDurationEl.textContent = formatDuration(duration)
-
-  renderSteps()
+/** Show the trip overview after a fresh destination + route fetch. */
+export function showOverview(routeGeoJson, destName, profile) {
+  ingestRoute(routeGeoJson)
+  currentDestName = destName || 'Destination'
+  currentProfile = profile
+  mode = 'overview'
+  render()
   show()
-  currentStepIdx = -1
 }
 
-export function clearInstructions() {
+/** Called when route data changes (drag-reroute, profile change). */
+export function updateRoute(routeGeoJson, profile) {
+  ingestRoute(routeGeoJson)
+  if (profile) currentProfile = profile
+  if (mode === 'overview') render()
+  else if (mode === 'navigating') render()
+}
+
+/** Transition from OVERVIEW to NAVIGATING. */
+export function startNavigating() {
+  mode = 'navigating'
+  currentStepIdx = -1
+  render()
+}
+
+/** Tear everything down — used by Cancel / End Trip. */
+export function clearTrip() {
+  mode = 'idle'
   stepsData = []
   geometry = []
   currentStepIdx = -1
-  listEl.innerHTML = ''
-  hide()
+  panelEl.classList.add('hidden')
+  appRoot.classList.remove('has-trip')
+  document.documentElement.style.removeProperty('--trip-panel-height')
 }
 
+/** Live update from the geolocation watcher — only relevant during navigation. */
 export function updateUpcomingStep(userLngLat) {
+  if (mode !== 'navigating') return
   if (!stepsData.length || !geometry.length) return
   const idx = nearestStepIndex(userLngLat)
   if (idx === currentStepIdx) return
   currentStepIdx = idx
-  for (const el of listEl.querySelectorAll('.step')) {
+  for (const el of panelEl.querySelectorAll('.step')) {
     el.classList.toggle('upcoming', Number(el.dataset.idx) === idx)
   }
-  const el = listEl.querySelector(`.step[data-idx="${idx}"]`)
+  const el = panelEl.querySelector(`.step[data-idx="${idx}"]`)
   if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
 }
 
-function renderSteps() {
-  listEl.innerHTML = ''
+// --- internals ---
+
+function ingestRoute(routeGeoJson) {
+  const feature = routeGeoJson?.features?.[0]
+  if (!feature) return
+  geometry = feature.geometry.coordinates
+  const props = feature.properties || {}
+  stepsData = (props.segments || []).flatMap((s) => s.steps || [])
+  currentSummary = {
+    distance: props.summary?.distance ?? 0,
+    duration: props.summary?.duration ?? 0
+  }
+}
+
+function show() {
+  panelEl.classList.remove('hidden')
+  appRoot.classList.add('has-trip')
+  // Hint for FAB offset — actual panel height varies by mode
+  const h = mode === 'overview' ? '46dvh' : '44dvh'
+  document.documentElement.style.setProperty('--trip-panel-height', h)
+}
+
+function render() {
+  panelEl.classList.toggle('mode-overview', mode === 'overview')
+  panelEl.classList.toggle('mode-navigating', mode === 'navigating')
+  if (mode === 'overview') renderOverview()
+  else if (mode === 'navigating') renderNavigating()
+}
+
+function renderOverview() {
+  panelEl.innerHTML = `
+    <div class="trip-overview">
+      <div class="trip-head">
+        <div class="trip-head-text">
+          <div class="trip-label">Trip to</div>
+          <div class="trip-destination"></div>
+        </div>
+        <button class="trip-close" type="button" aria-label="Cancel">✕</button>
+      </div>
+      <div class="trip-stats">
+        <div class="trip-stat">
+          <div class="trip-stat-value"></div>
+          <div class="trip-stat-label">Time</div>
+        </div>
+        <div class="trip-stat">
+          <div class="trip-stat-value"></div>
+          <div class="trip-stat-label">Distance</div>
+        </div>
+      </div>
+      <div class="trip-profiles" role="radiogroup" aria-label="Bike type">
+        <button type="button" class="profile-btn" data-profile="cycling-regular" role="radio">🚲 Regular</button>
+        <button type="button" class="profile-btn" data-profile="cycling-electric" role="radio">⚡ E-bike</button>
+      </div>
+      <button type="button" class="trip-start">Start Trip</button>
+      <div class="trip-hint">Drag the route to add a stop · tap × to remove</div>
+    </div>
+  `
+  panelEl.querySelector('.trip-destination').textContent = currentDestName
+  panelEl.querySelectorAll('.trip-stat-value')[0].textContent = formatDuration(currentSummary.duration)
+  panelEl.querySelectorAll('.trip-stat-value')[1].textContent = formatDistance(currentSummary.distance)
+  for (const btn of panelEl.querySelectorAll('.profile-btn')) {
+    btn.classList.toggle('active', btn.dataset.profile === currentProfile)
+    btn.setAttribute('aria-checked', btn.dataset.profile === currentProfile ? 'true' : 'false')
+    btn.addEventListener('click', () => {
+      const p = btn.dataset.profile
+      if (p && p !== currentProfile && typeof onProfileChangeCb === 'function') {
+        onProfileChangeCb(p)
+      }
+    })
+  }
+  panelEl.querySelector('.trip-close').addEventListener('click', () => {
+    if (typeof onCancelCb === 'function') onCancelCb()
+  })
+  panelEl.querySelector('.trip-start').addEventListener('click', () => {
+    if (typeof onStartCb === 'function') onStartCb()
+  })
+}
+
+function renderNavigating() {
+  panelEl.innerHTML = `
+    <div class="nav-header">
+      <div class="nav-summary">
+        <span class="nav-duration"></span>
+        <span class="nav-sep">·</span>
+        <span class="nav-distance"></span>
+      </div>
+      <button type="button" class="nav-end">End</button>
+    </div>
+    <div class="instructions-list" role="list"></div>
+  `
+  panelEl.querySelector('.nav-duration').textContent = formatDuration(currentSummary.duration)
+  panelEl.querySelector('.nav-distance').textContent = formatDistance(currentSummary.distance)
+  panelEl.querySelector('.nav-end').addEventListener('click', () => {
+    if (typeof onCancelCb === 'function') onCancelCb()
+  })
+  const list = panelEl.querySelector('.instructions-list')
   stepsData.forEach((step, idx) => {
     const item = document.createElement('div')
     item.className = 'step'
@@ -101,21 +203,8 @@ function renderSteps() {
     body.appendChild(dist)
     item.appendChild(icon)
     item.appendChild(body)
-    listEl.appendChild(item)
+    list.appendChild(item)
   })
-}
-
-function show() {
-  panelEl.classList.add('visible')
-  appRoot.classList.add('has-instructions')
-  // Approximate panel height for FAB offset (CSS reads --instructions-height)
-  document.documentElement.style.setProperty('--instructions-height', '40dvh')
-}
-
-function hide() {
-  panelEl.classList.remove('visible')
-  appRoot.classList.remove('has-instructions')
-  document.documentElement.style.removeProperty('--instructions-height')
 }
 
 function nearestStepIndex(userLngLat) {
@@ -125,7 +214,6 @@ function nearestStepIndex(userLngLat) {
     const d = haversine(userLngLat, geometry[i])
     if (d < bestD) { bestD = d; bestI = i }
   }
-  // Map nearest geometry index → step whose way_points end at or beyond it
   for (let s = 0; s < stepsData.length; s++) {
     const wp = stepsData[s].way_points
     if (Array.isArray(wp) && wp.length >= 2 && bestI <= wp[1]) return s
@@ -159,28 +247,10 @@ function formatDuration(s) {
 }
 
 // ORS instruction type codes
-// https://giscience.github.io/openrouteservice/api-reference/endpoints/directions/instruction-types
 const ICONS = {
-  0: '←',   // Left
-  1: '→',   // Right
-  2: '↰',   // Sharp left
-  3: '↱',   // Sharp right
-  4: '↖',   // Slight left
-  5: '↗',   // Slight right
-  6: '↑',   // Straight
-  7: '⟲',   // Enter roundabout
-  8: '⟳',   // Exit roundabout
-  9: '↶',   // U-turn
-  10: '◉',  // Goal
-  11: '▲',  // Depart
-  12: '⬉',  // Keep left
-  13: '⬈'   // Keep right
+  0: '←', 1: '→', 2: '↰', 3: '↱', 4: '↖', 5: '↗',
+  6: '↑', 7: '⟲', 8: '⟳', 9: '↶', 10: '◉', 11: '▲',
+  12: '⬉', 13: '⬈'
 }
-
-function stepIcon(type) {
-  return ICONS[type] ?? '↑'
-}
-
-function stepFallback(step) {
-  return step.name ? `Continue on ${step.name}` : 'Continue'
-}
+function stepIcon(type) { return ICONS[type] ?? '↑' }
+function stepFallback(step) { return step.name ? `Continue on ${step.name}` : 'Continue' }

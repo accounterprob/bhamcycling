@@ -15,10 +15,12 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
 import { initMap, flyToCurrentLocation, startTracking, getLastKnownLocation } from './map.js'
 import { initDestinationPanel } from './destination.js'
 import {
-  initInstructionsPanel,
-  setRoute as setInstructionsRoute,
-  updateUpcomingStep,
-  clearInstructions
+  initTripPanel,
+  showOverview,
+  updateRoute,
+  startNavigating,
+  clearTrip,
+  updateUpcomingStep
 } from './instructions.js'
 import {
   getRoute,
@@ -47,10 +49,15 @@ appRoot.innerHTML = `
 
 const map = initMap('map')
 initDestinationPanel(appRoot, onDestinationChosen)
-initInstructionsPanel(appRoot, onClearRoute)
+initTripPanel(appRoot, {
+  onStart: handleStartTrip,
+  onCancel: handleCancelTrip,
+  onProfileChange: handleProfileChange
+})
 
 // Ordered waypoints: [start, via1, via2, ..., end]. Each is {lng, lat, name?}.
 let waypoints = []
+let currentProfile = 'cycling-regular'
 let isRerouting = false
 
 document.getElementById('locate-btn').addEventListener('click', () => {
@@ -81,20 +88,16 @@ async function onDestinationChosen(dest) {
     { lng: here[0], lat: here[1] },
     { lng: dest.lon, lat: dest.lat, name: dest.name }
   ]
-  await reroute({ fit: true })
-  maybeShowFirstRouteTip()
+  await reroute({ fit: true, isInitial: true })
 }
 
 function onAddVia(lngLat) {
   if (waypoints.length < 2) return
-  // Insert before the destination. For multi-via routes the user can drag
-  // each via to fine-tune position; we don't auto-order along the path.
   waypoints.splice(waypoints.length - 1, 0, { lng: lngLat.lng, lat: lngLat.lat })
   reroute({ fit: false })
 }
 
 function onMoveVia(viaIdx, lngLat) {
-  // viaIdx is index within vias array (0..N-1) → waypoint index is viaIdx + 1
   if (waypoints.length < 3) return
   waypoints[viaIdx + 1] = { lng: lngLat.lng, lat: lngLat.lat }
   reroute({ fit: false })
@@ -106,17 +109,22 @@ function onRemoveVia(viaIdx) {
   reroute({ fit: false })
 }
 
-async function reroute({ fit = false } = {}) {
+async function reroute({ fit = false, isInitial = false } = {}) {
   if (waypoints.length < 2 || isRerouting) return
   isRerouting = true
   try {
-    const geo = await getRoute(waypoints, 'cycling-regular')
+    const geo = await getRoute(waypoints, currentProfile)
     drawRoute(map, geo)
     drawEndpointMarkers(map, waypoints[0], waypoints[waypoints.length - 1])
     const vias = waypoints.slice(1, -1)
     renderViaMarkers(map, vias, { onMove: onMoveVia, onRemove: onRemoveVia })
     if (fit) fitRouteBounds(map, geo)
-    setInstructionsRoute(geo)
+    if (isInitial) {
+      const destName = waypoints[waypoints.length - 1].name || 'Destination'
+      showOverview(geo, destName, currentProfile)
+    } else {
+      updateRoute(geo, currentProfile)
+    }
   } catch (e) {
     console.error(e)
     showToast(`Routing failed: ${e.message}`, { type: 'error', duration: 4000 })
@@ -125,21 +133,20 @@ async function reroute({ fit = false } = {}) {
   }
 }
 
-function onClearRoute() {
-  waypoints = []
-  clearRoute(map)
-  clearInstructions()
+function handleStartTrip() {
+  startNavigating()
 }
 
-const FIRST_TIP_KEY = 'bham-cycle-first-route-tip'
-function maybeShowFirstRouteTip() {
-  if (localStorage.getItem(FIRST_TIP_KEY)) return
-  setTimeout(() => {
-    showToast('Tip: drag the route to add a stop. Long-press a stop to remove.', {
-      duration: 4500
-    })
-  }, 1200)
-  localStorage.setItem(FIRST_TIP_KEY, '1')
+function handleCancelTrip() {
+  waypoints = []
+  clearRoute(map)
+  clearTrip()
+}
+
+function handleProfileChange(profile) {
+  if (profile === currentProfile) return
+  currentProfile = profile
+  reroute({ fit: false })
 }
 
 function getOneShotPosition() {

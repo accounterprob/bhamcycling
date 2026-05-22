@@ -77,13 +77,14 @@ export function drawRoute(map, routeGeoJson) {
     layout: { 'line-join': 'round', 'line-cap': 'round' },
     paint: { 'line-color': '#38d1ff', 'line-width': 5 }
   })
-  // Invisible, very wide line so touch reliably hits the route on iPhone.
+  // Invisible hit layer for touch. Narrower than before so off-line taps
+  // don't accidentally trigger drag — you have to touch close to the line.
   map.addLayer({
     id: HIT_ID,
     type: 'line',
     source: SOURCE_ID,
     layout: { 'line-join': 'round', 'line-cap': 'round' },
-    paint: { 'line-color': '#000', 'line-width': 32, 'line-opacity': 0 }
+    paint: { 'line-color': '#000', 'line-width': 16, 'line-opacity': 0 }
   })
 }
 
@@ -121,7 +122,9 @@ export function setupRouteDrag(map, onAddVia) {
     const onMove = (ev) => {
       const dx = ev.point.x - startPoint.x
       const dy = ev.point.y - startPoint.y
-      if (!committed && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+      // 14px diagonal threshold — large enough that finger jitter on a tap
+      // won't accidentally commit, small enough that intentional drag feels responsive
+      if (!committed && dx * dx + dy * dy > 14 * 14) {
         committed = true
       }
       if (committed) showGhost(ev.lngLat)
@@ -170,18 +173,30 @@ export function drawEndpointMarkers(map, start, end) {
 
 /**
  * Render orange numbered markers for via waypoints.
- * Drag to move; long-press (mobile) or double-click (desktop) to remove.
+ * Each marker has a visible × button to remove it. Drag the body to move it.
  */
 export function renderViaMarkers(map, vias, { onMove, onRemove }) {
   for (const m of viaMarkers) m.remove()
   viaMarkers = []
 
   vias.forEach((wp, idx) => {
-    const el = document.createElement('div')
-    el.className = 'via-marker'
-    el.textContent = String(idx + 1)
+    const wrap = document.createElement('div')
+    wrap.className = 'via-wrap'
 
-    const marker = new maplibregl.Marker({ element: el, draggable: true })
+    const dot = document.createElement('div')
+    dot.className = 'via-marker'
+    dot.textContent = String(idx + 1)
+
+    const remove = document.createElement('button')
+    remove.type = 'button'
+    remove.className = 'via-remove'
+    remove.setAttribute('aria-label', `Remove stop ${idx + 1}`)
+    remove.textContent = '×'
+
+    wrap.appendChild(dot)
+    wrap.appendChild(remove)
+
+    const marker = new maplibregl.Marker({ element: wrap, draggable: true })
       .setLngLat([wp.lng, wp.lat])
       .addTo(map)
 
@@ -190,28 +205,14 @@ export function renderViaMarkers(map, vias, { onMove, onRemove }) {
       onMove(idx, { lng: ll.lng, lat: ll.lat })
     })
 
-    // Long-press to remove (mobile). Cancel if movement begins (= drag).
-    let pressTimer = null
-    const clearPress = () => {
-      if (pressTimer) { clearTimeout(pressTimer); pressTimer = null }
-    }
-    const startPress = () => {
-      clearPress()
-      pressTimer = setTimeout(() => onRemove(idx), 650)
-    }
-    el.addEventListener('touchstart', startPress, { passive: true })
-    el.addEventListener('touchmove', clearPress, { passive: true })
-    el.addEventListener('touchend', clearPress)
-    el.addEventListener('touchcancel', clearPress)
-    el.addEventListener('mousedown', startPress)
-    el.addEventListener('mousemove', clearPress)
-    el.addEventListener('mouseup', clearPress)
-    el.addEventListener('mouseleave', clearPress)
-    // Desktop convenience: double-click removes
-    el.addEventListener('dblclick', (ev) => {
+    // Tap the × to remove. Stop propagation so it doesn't initiate a drag.
+    const removeHandler = (ev) => {
       ev.stopPropagation()
+      ev.preventDefault()
       onRemove(idx)
-    })
+    }
+    remove.addEventListener('click', removeHandler)
+    remove.addEventListener('touchend', removeHandler)
 
     viaMarkers.push(marker)
   })

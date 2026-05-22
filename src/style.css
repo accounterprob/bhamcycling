@@ -77,9 +77,9 @@ button {
 }
 .fab:active { transform: scale(0.94); }
 
-/* When a route panel is shown at the bottom, lift the FAB above it. */
-.has-instructions .fab {
-  bottom: calc(var(--instructions-height, 40dvh) + 0.75rem + var(--safe-bottom));
+/* When a trip panel is shown at the bottom, lift the FAB above it. */
+.has-trip .fab {
+  bottom: calc(var(--trip-panel-height, 44dvh) + 0.75rem + var(--safe-bottom));
 }
 
 /* --- User location marker --- */
@@ -109,24 +109,52 @@ button {
 }
 .endpoint-end { border-color: var(--ok); }
 
-/* --- Via waypoints (orange, draggable, long-press to remove) --- */
+/* --- Via waypoints (orange dot + × remove button) ---
+   Drag the dot to move it; tap × to remove. */
+.via-wrap {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  touch-action: none;
+}
 .via-marker {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   background: #ffb627;
   color: #1a1a1a;
   border: 3px solid #fff;
   font-weight: 700;
-  font-size: 0.82rem;
+  font-size: 0.88rem;
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5);
   cursor: grab;
-  touch-action: none;
 }
-.via-marker:active { cursor: grabbing; transform: scale(1.08); }
+.via-wrap:active .via-marker { cursor: grabbing; transform: scale(1.06); }
+.via-remove {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #fff;
+  border: 2px solid var(--panel-solid);
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.via-remove:active { transform: scale(0.92); }
 
 /* Ghost marker shown while dragging the route line */
 .drag-ghost {
@@ -301,8 +329,8 @@ button {
 }
 .favorite-edit:active { background: rgba(255,255,255,0.05); }
 
-/* --- Instructions panel (bottom, slides up above destination panel) --- */
-.instructions-panel {
+/* --- Trip panel (bottom; two modes: overview + navigating) --- */
+.trip-panel {
   position: fixed;
   left: 0;
   right: 0;
@@ -312,36 +340,136 @@ button {
   border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  max-height: 50dvh;
+  max-height: 75dvh;
   padding-bottom: var(--safe-bottom);
-  transform: translateY(100%);
-  transition: transform 220ms ease;
+  transform: translateY(0);
+  transition: transform 240ms ease;
 }
-.instructions-panel.visible { transform: translateY(0); }
+.trip-panel.hidden { transform: translateY(100%); pointer-events: none; }
 
-.instructions-header {
+/* Overview mode — summary card with profile toggle + Start button */
+.trip-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1rem 1rem 1.1rem;
+}
+.trip-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.trip-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.trip-destination {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-top: 0.15rem;
+  line-height: 1.25;
+}
+.trip-close {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 1.25rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.trip-close:active { background: rgba(255,255,255,0.07); }
+
+.trip-stats {
+  display: flex;
+  gap: 1rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.trip-stat { flex: 1; }
+.trip-stat-value { font-size: 1.3rem; font-weight: 700; }
+.trip-stat-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.trip-profiles {
+  display: flex;
+  gap: 0.5rem;
+}
+.profile-btn {
+  flex: 1;
+  padding: 0.7rem 0.5rem;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--fg);
+  font-size: 0.93rem;
+  font-weight: 500;
+}
+.profile-btn.active {
+  background: var(--accent-dark);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.profile-btn:active { transform: scale(0.97); }
+
+.trip-start {
+  width: 100%;
+  padding: 0.95rem;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 1.05rem;
+  font-weight: 700;
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(56, 209, 255, 0.28);
+}
+.trip-start:active { transform: scale(0.985); }
+
+.trip-hint {
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* Navigating mode — scrollable turn-by-turn */
+.trip-panel.mode-navigating {
+  max-height: 50dvh;
+}
+.nav-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0.7rem 1rem;
   border-bottom: 1px solid var(--border);
 }
-.route-summary {
+.nav-summary {
   display: flex;
-  gap: 0.8rem;
+  gap: 0.55rem;
   align-items: baseline;
 }
-.summary-distance { font-size: 1.05rem; font-weight: 600; }
-.summary-duration { color: var(--muted); font-size: 0.9rem; }
-.close-route {
-  background: transparent;
-  border: none;
-  color: var(--muted);
-  font-size: 1.2rem;
-  padding: 0.25rem 0.55rem;
-  border-radius: 8px;
+.nav-duration { font-size: 1.05rem; font-weight: 700; }
+.nav-distance { color: var(--muted); font-size: 0.92rem; }
+.nav-sep { color: var(--muted); }
+.nav-end {
+  background: rgba(255, 93, 108, 0.14);
+  color: var(--danger);
+  border: 1px solid rgba(255, 93, 108, 0.3);
+  padding: 0.45rem 1rem;
+  border-radius: 9px;
+  font-weight: 600;
+  font-size: 0.92rem;
 }
-.close-route:active { background: rgba(255,255,255,0.06); }
+.nav-end:active { background: rgba(255, 93, 108, 0.24); }
 
 .instructions-list {
   overflow-y: auto;
@@ -388,9 +516,9 @@ button {
 }
 .step.upcoming .step-instruction { font-weight: 600; }
 
-/* When the instructions panel is showing, hide the destination collapsed pill
-   so it doesn't sit on top of it. The user can still clear & re-search. */
-.has-instructions .destination-panel.collapsed { display: none; }
+/* When a trip is active, hide the destination collapsed pill so it doesn't
+   sit on top of the panel. Clear/End the trip to search again. */
+.has-trip .destination-panel.collapsed { display: none; }
 
 /* --- Toast --- */
 .toast {
